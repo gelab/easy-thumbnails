@@ -401,35 +401,48 @@ class Thumbnailer(File):
         dictionary. If the ``save`` argument is ``True`` (default), the
         generated thumbnail will be saved too.
         """
-        if generate is None:
-            generate = self.generate
-
-        thumbnail = self.get_existing_thumbnail(thumbnail_options)
-        if not thumbnail:
-            if generate:
-                thumbnail = self.generate_thumbnail(thumbnail_options)
-                if save:
-                    self.save_thumbnail(thumbnail)
+        if not settings.DEBUG and not generate:
+            filename = self.get_thumbnail_name(thumbnail_options, transparent=False)
+            return ThumbnailFile(
+                name=filename, storage=self.thumbnail_storage,
+                thumbnail_options=thumbnail_options)
+        else:
+            opaque_name = self.get_thumbnail_name(thumbnail_options,
+                                                  transparent=False)
+            transparent_name = self.get_thumbnail_name(thumbnail_options,
+                                                       transparent=True)
+            if opaque_name == transparent_name:
+                names = (opaque_name,)
             else:
+                names = (opaque_name, transparent_name)
+            for filename in names:
+                if self.thumbnail_exists(filename):
+                    return ThumbnailFile(
+                        name=filename, storage=self.thumbnail_storage,
+                        thumbnail_options=thumbnail_options)
+
+            if generate is None:
+                generate = self.generate
+            if not generate:
                 signals.thumbnail_missed.send(
-                    sender=self, options=thumbnail_options,
-                    high_resolution=False)
+                    sender=self, options=thumbnail_options)
+                return
 
-        if self.thumbnail_high_resolution:
-            thumbnail.high_resolution = self.get_existing_thumbnail(
-                thumbnail_options, high_resolution=True)
-            if not thumbnail.high_resolution:
-                if generate:
-                    thumbnail.high_resolution = self.generate_thumbnail(
-                        thumbnail_options, high_resolution=True)
-                    if save:
-                        self.save_thumbnail(thumbnail.high_resolution)
-                else:
-                    signals.thumbnail_missed.send(
-                        sender=self, options=thumbnail_options,
-                        high_resolution=False)
+            thumbnail = self.generate_thumbnail(thumbnail_options)
+            if save:
+                self.save_thumbnail(thumbnail, self.thumbnail_storage)
+                signals.thumbnail_created.send(sender=thumbnail)
+                # Ensure the right thumbnail name is used based on the transparency
+                # of the image.
+                filename = (utils.is_transparent(thumbnail.image) and
+                            transparent_name or opaque_name)
+                self.get_thumbnail_cache(filename, create=True, update=True)
 
-        return thumbnail
+                if self.thumbnail_high_resolution:
+                    thumbnail_2x = self.generate_thumbnail(thumbnail_options,
+                                                           high_resolution=True)
+                    self.save_thumbnail(thumbnail_2x, self.thumbnail_storage)
+            return thumbnail
 
     def save_thumbnail(self, thumbnail):
         """
