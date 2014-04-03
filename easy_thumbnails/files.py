@@ -287,9 +287,10 @@ class Thumbnailer(File):
             thumbnail_options = thumbnail_options.copy()
             thumbnail_options['size'] = (orig_size[0] * 2, orig_size[1] * 2)
         image = self.generate_source_image(thumbnail_options)
-        if image is None:
-            raise exceptions.InvalidImageFormatError(
-                "The source file does not appear to be an image")
+        if image is None and settings.DEBUG:
+            return None
+            #raise exceptions.InvalidImageFormatError(
+            #    "The source file does not appear to be an image")
 
         thumbnail_image = engine.process_image(image, thumbnail_options,
                                                self.thumbnail_processors)
@@ -414,6 +415,8 @@ class Thumbnailer(File):
             if not thumbnail:
                 if generate:
                     thumbnail = self.generate_thumbnail(thumbnail_options)
+                    if thumbnail == None and settings.DEBUG:
+                        return self
                     if save:
                         self.save_thumbnail(thumbnail)
                 else:
